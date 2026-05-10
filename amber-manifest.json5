@@ -1,0 +1,42 @@
+// Amber manifest for the pi-bench purple agent.
+//
+// Quick-Submit pulls this image from GHCR. Pin to an immutable digest at
+// submission time:  ghcr.io/<USER>/pi-bench-purple-policygrounder@sha256:<DIGEST>
+{
+  manifest_version: "0.2.0",
+  program: {
+    image: "ghcr.io/<YOUR_GHCR_USER>/pi-bench-purple-policygrounder:latest",
+    entrypoint: [
+      "python", "-m", "src.server",
+      "--host", "0.0.0.0",
+      "--port", "8080",
+    ],
+    env: {
+      OPENAI_API_KEY:    "${config.openai_api_key}",
+      OPENAI_MODEL:      { when: "config.openai_model",      value: "${config.openai_model}" },
+      REASONING_EFFORT:  { when: "config.reasoning_effort",  value: "${config.reasoning_effort}" },
+      LOG_LEVEL: "INFO",
+    },
+    network: {
+      endpoints: [
+        { name: "endpoint", port: 8080 },
+      ],
+    },
+  },
+  config_schema: {
+    type: "object",
+    properties: {
+      openai_api_key:   { type: "string", secret: true },
+      openai_model:     { type: "string" },
+      reasoning_effort: { type: "string" },
+    },
+    required: ["openai_api_key"],
+    additionalProperties: false,
+  },
+  provides: {
+    a2a: { kind: "a2a", endpoint: "endpoint" },
+  },
+  exports: {
+    a2a: "a2a",
+  },
+}

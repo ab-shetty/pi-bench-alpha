@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Logs and run artifacts (sample run output, server logs, results JSONs)
+*.log
+nohup.out
+sample_run*.log
+sample_results*.json
+purple*.log
+
+# Sampled scenarios (copied from pi-bench at test time, not source)
+sample_scenarios/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local secrets (just in case)
+.env
+.env.local
+*.secret
