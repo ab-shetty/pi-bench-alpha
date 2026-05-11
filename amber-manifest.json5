@@ -5,7 +5,7 @@
 {
   manifest_version: "0.2.0",
   program: {
-    image: "ghcr.io/<YOUR_GHCR_USER>/pi-bench-purple-policygrounder:latest",
+    image: "ghcr.io/ab-shetty/pi-bench-alpha:latest",
     entrypoint: [
       "python", "-m", "src.server",
       "--host", "0.0.0.0",
