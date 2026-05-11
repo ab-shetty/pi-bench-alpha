@@ -1,4 +1,4 @@
-# Pi-Bench Purple Agent — `pi-bench-purple-policygrounder`
+# Pi-Bench Purple Agent
 
 A purple agent for the AgentBeats **Pi-Bench** policy-interpretation benchmark.
 Given a policy document, a tool inventory, and a simulated end-user, the
@@ -128,22 +128,6 @@ intermediate workflow tools. Every transformation is reversible from
 the schema alone and contains no model-author judgment, which keeps
 it safe to run on every turn without risk of regressing privacy or
 decision-label compliance.
-
-### 4. The A2A server — `src/server.py`
-
-Implements the Pi-Bench A2A protocol on `/`:
-
-- `GET /health` — returns model and status.
-- `GET /.well-known/agent.json` (and `/agent-card.json` alias) —
-  advertises `urn:pi-bench:policy-bootstrap:v1` so the green grader
-  sends policy + tool inventory **once** at the start of a scenario.
-  The server caches the rendered system prompt and tool list under a
-  generated `context_id`, then each subsequent turn re-uses them by ID
-  rather than re-sending. Substantially reduces token costs and
-  latency on multi-turn scenarios.
-- `POST /` — handles JSON-RPC `message/send`. Bootstraps a new context
-  on first call; on every other call runs one `litellm.completion`,
-  applies the post-processor, and returns tool calls + content.
 
 ---
 
