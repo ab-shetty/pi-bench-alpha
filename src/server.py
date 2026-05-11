@@ -35,23 +35,83 @@ _model: str = "gpt-5-mini"
 _reasoning_effort: str | None = "high"
 _seed: int | None = None
 _card_url: str = ""
+_host: str = "0.0.0.0"
+_port: int = 8080
 _sessions: dict[str, dict] = {}
+
+
+def _build_agent_card() -> dict[str, Any]:
+    """Return an A2A-spec-compliant agent card.
+
+    Built via the official `a2a-sdk` pydantic models so the output matches
+    exactly what amber/gateway parsers expect (correct camelCase aliases,
+    required fields like `preferredTransport`, current `protocolVersion`).
+    The Pi-Bench `urn:pi-bench:policy-bootstrap:v1` extension is declared
+    in `capabilities.extensions` so the green grader knows to send the
+    bootstrap payload at session start.
+    """
+    from a2a.types import (
+        AgentCapabilities,
+        AgentCard,
+        AgentExtension,
+        AgentSkill,
+    )
+
+    url = _card_url or f"http://{_host}:{_port}/"
+    skill = AgentSkill(
+        id="pibench_policy_compliance",
+        name="Pi-Bench policy compliance",
+        description=(
+            "Reads the scenario policy and external tool inventory, "
+            "gathers required state via tool calls, executes the "
+            "policy-prescribed workflow, and records a canonical "
+            "decision in {ALLOW, ALLOW-CONDITIONAL, DENY, ESCALATE}."
+        ),
+        tags=["pi-bench", "policy-compliance", "structured-execution"],
+        examples=[
+            "Process a refund request within the return window.",
+            "Decide whether a wire transfer requires compliance escalation.",
+            "Approve or deny an access-grant request against a policy doc.",
+        ],
+    )
+    capabilities = AgentCapabilities(
+        streaming=False,
+        push_notifications=False,
+        state_transition_history=False,
+        extensions=[
+            AgentExtension(
+                uri=POLICY_BOOTSTRAP_EXTENSION,
+                description="Pi-Bench one-shot policy + tool-inventory bootstrap",
+                required=False,
+            )
+        ],
+    )
+    card = AgentCard(
+        name="pi-bench-purple-policygrounder",
+        description=(
+            "Policy-grounded purple agent for the AgentBeats Pi-Bench "
+            "benchmark. Reads policy + state through tools, executes the "
+            "full prescribed workflow, and records exactly one canonical "
+            "decision per scenario."
+        ),
+        url=url,
+        version="0.1.0",
+        skills=[skill],
+        default_input_modes=["text"],
+        default_output_modes=["text"],
+        capabilities=capabilities,
+    )
+    return card.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
 @app.get("/.well-known/agent.json")
 async def agent_card() -> JSONResponse:
-    return JSONResponse({
-        "name": "pi-bench-purple-policygrounder",
-        "description": "Policy-grounded purple agent for pi-bench (gpt-5-mini)",
-        "url": _card_url,
-        "extensions": [POLICY_BOOTSTRAP_EXTENSION],
-        "capabilities": {"message": True},
-    })
+    return JSONResponse(_build_agent_card())
 
 
 @app.get("/.well-known/agent-card.json")
 async def agent_card_alias() -> JSONResponse:
-    return await agent_card()
+    return JSONResponse(_build_agent_card())
 
 
 @app.get("/health")
@@ -189,7 +249,7 @@ def _jsonrpc_error(request_id: str | None, code: int, message: str) -> JSONRespo
 
 
 def main() -> None:
-    global _model, _reasoning_effort, _seed, _card_url
+    global _model, _reasoning_effort, _seed, _card_url, _host, _port
 
     parser = argparse.ArgumentParser(description="pi-bench purple agent (policy-grounder)")
     parser.add_argument("--model", default=os.environ.get("OPENAI_MODEL", "gpt-5-mini"))
@@ -205,6 +265,8 @@ def main() -> None:
     _reasoning_effort = args.reasoning_effort or None
     _seed = args.seed
     _card_url = args.card_url
+    _host = args.host
+    _port = args.port
 
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     logger.info("Starting purple agent: model=%s effort=%s host=%s port=%d",
