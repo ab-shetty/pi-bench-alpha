@@ -21,8 +21,9 @@ import uvicorn
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
+from .post_processor import post_process_tool_calls
+from .session_state import assess as assess_session, build_addendum
 from .system_prompt import build_system_prompt
-from .validator import apply_correction, validate_decision
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,16 @@ async def _handle_turn(request_id: str | None, data: dict) -> JSONResponse:
         system_prompt = build_system_prompt(benchmark_context, tools)
 
     visible = [m for m in messages if isinstance(m, dict) and m.get("role") != "system"]
-    model_messages = [{"role": "system", "content": system_prompt}, *visible]
+    session_assessment = assess_session(visible)
+    addendum = build_addendum(session_assessment)
+    if addendum:
+        model_messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": addendum},
+            *visible,
+        ]
+    else:
+        model_messages = [{"role": "system", "content": system_prompt}, *visible]
 
     kwargs: dict[str, Any] = {
         "model": _model,
@@ -134,72 +144,14 @@ async def _handle_turn(request_id: str | None, data: dict) -> JSONResponse:
         return _jsonrpc_error(request_id, -32000, str(exc))
 
     choice_message = response.choices[0].message
-    raw_tool_calls = list(getattr(choice_message, "tool_calls", None) or [])
-    raw_content = getattr(choice_message, "content", None)
-
-    if _calls_record_decision(raw_tool_calls):
-        proposed_tool_calls = [_tool_call_to_dict(tc) for tc in raw_tool_calls]
-        verdict = await validate_decision(
-            model=_model,
-            reasoning_effort=_reasoning_effort,
-            system_prompt=system_prompt,
-            conversation_messages=visible,
-            proposed_tool_calls=proposed_tool_calls,
-            proposed_content=raw_content,
-        )
-        if verdict.get("verdict") == "revise":
-            corrected_tool_calls, corrected_content = apply_correction(
-                verdict, fallback_content=raw_content
-            )
-            if corrected_tool_calls:
-                logger.info(
-                    "Validator revised final turn: issues=%s",
-                    verdict.get("issues"),
-                )
-                data: dict[str, Any] = {"tool_calls": corrected_tool_calls}
-                if corrected_content:
-                    data["content"] = corrected_content
-                return _jsonrpc_success(request_id, {"kind": "data", "data": data})
-
-    return _jsonrpc_success(request_id, _format_response(choice_message))
+    return _jsonrpc_success(request_id, _format_response(choice_message, tools))
 
 
-def _calls_record_decision(tool_calls: list[Any]) -> bool:
-    for tc in tool_calls or []:
-        fn = getattr(tc, "function", None)
-        name = getattr(fn, "name", "") if fn is not None else ""
-        if name == "record_decision":
-            return True
-    return False
-
-
-def _tool_call_to_dict(tc: Any) -> dict:
-    fn = getattr(tc, "function", None)
-    return {
-        "id": getattr(tc, "id", ""),
-        "type": "function",
-        "function": {
-            "name": getattr(fn, "name", "") if fn is not None else "",
-            "arguments": getattr(fn, "arguments", "") if fn is not None else "",
-        },
-    }
-
-
-def _format_response(choice_message: Any) -> dict:
+def _format_response(choice_message: Any, tools: list[dict]) -> dict:
     tool_calls_raw = getattr(choice_message, "tool_calls", None)
     content = getattr(choice_message, "content", None)
     if tool_calls_raw:
-        tc_list = [
-            {
-                "id": tc.id,
-                "type": "function",
-                "function": {
-                    "name": tc.function.name,
-                    "arguments": tc.function.arguments,
-                },
-            }
-            for tc in tool_calls_raw
-        ]
+        tc_list = post_process_tool_calls(list(tool_calls_raw), tools)
         data: dict[str, Any] = {"tool_calls": tc_list}
         if content:
             data["content"] = content
