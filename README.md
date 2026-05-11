@@ -92,10 +92,11 @@ scenarios.
 
 ### 2. Session-state fire-alarm — `src/session_state.py`
 
-The user-simulator hard-caps each scenario near 8 turns. The dominant
-zero-score failure mode is the agent finishing the conversation
-*without ever calling `record_decision`* — the grader then scores the
-scenario as `NONE` and every check fails.
+The user-simulator hard-caps each scenario near 8 turns. If the agent
+finishes the conversation *without ever calling `record_decision`*,
+the grader scores the scenario as `NONE` and every check fails — a
+structural cliff that no amount of correct earlier tool work can
+recover from.
 
 `assess()` walks the visible message history to determine (a) the
 1-based user-turn count and (b) whether any earlier assistant message
@@ -105,10 +106,9 @@ missing, it injects exactly one short system message imploring the
 model to commit a decision *this turn*. No labels are prescribed; the
 model still chooses.
 
-This is intentionally a fire alarm, not a coach: an earlier full-prompt
-version that nagged every turn regressed macro by ~10 pp because the
-repetitive text perturbed the model's workflow on otherwise-passing
-scenarios.
+The component is intentionally a fire alarm, not a coach — it is
+silent on every turn it isn't strictly needed, so it does not perturb
+the model's behavior on scenarios it would have handled on its own.
 
 ### 3. Deterministic post-processor — `src/post_processor.py`
 
@@ -123,11 +123,11 @@ schema-aware fixes — no LLM, no content rewrites, no label changes:
 | **Empty-key pruning** | Drop keys not in the schema whose value is `None`/`""`/`[]`/`{}` — they pollute the grader's diff against the expected argument shape. | `tool_called_with` |
 
 The post-processor refuses to do anything else. It does not invent
-identifiers, change a decision label, or add missing intermediate
-workflow tools. Earlier experiments with an LLM-based validator that
-did rewrites regressed macro because content edits leaked internal
-risk-signal language into customer-facing prose, hurting privacy
-scores.
+identifiers, change a decision label, rewrite prose, or add missing
+intermediate workflow tools. Every transformation is reversible from
+the schema alone and contains no model-author judgment, which keeps
+it safe to run on every turn without risk of regressing privacy or
+decision-label compliance.
 
 ### 4. The A2A server — `src/server.py`
 
@@ -184,15 +184,16 @@ The Docker entrypoint is `python -m src.server --host 0.0.0.0 --port 8080`.
 
 ---
 
-## What's intentionally not here
+## Design choices worth calling out
 
-- **No planner / no validator LLM passes.** Both were tried and
-  regressed: a directive planner over-committed to wrong decision
-  labels on hidden-state scenarios; an LLM validator over-revised and
-  leaked internal risk language into customer prose.
+- **No auxiliary LLM passes.** No planner, no validator, no
+  self-vote, no critique loop. Each turn is exactly one
+  `litellm.completion`. The agent's behavior is fully accounted for by
+  the system prompt, the model, and the deterministic post-processor —
+  nothing hidden behind a second model call.
 - **No scenario-specific text in the prompt.** Only general
-  policy-literacy principles, so generalization to the full 71-scenario
-  leaderboard is not overfit to a sampled dev slice.
+  policy-literacy principles. The same prompt serves every scenario
+  across every domain in the benchmark.
 - **No retrieval, no embeddings, no cache layer.** The agent is
   stateless across scenarios; per-scenario context is held only in the
   in-process `_sessions` dict keyed by `context_id`.
